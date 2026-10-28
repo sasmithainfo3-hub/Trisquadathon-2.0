@@ -3,8 +3,8 @@ import { config } from '../config/env.js';
 
 export function getSmtpTransporter() {
   const host = process.env.SMTP_HOST || (process.env.SMTP_USER?.includes('@gmail.com') ? 'smtp.gmail.com' : config.smtp?.host);
-  const user = process.env.SMTP_USER || config.smtp?.user;
-  const pass = process.env.SMTP_PASS || config.smtp?.pass;
+  const user = (process.env.SMTP_USER || config.smtp?.user || '').trim();
+  const pass = (process.env.SMTP_PASS || config.smtp?.pass || '').replace(/\s+/g, '');
   const port = parseInt(process.env.SMTP_PORT || (host === 'smtp.gmail.com' ? '465' : '587'), 10);
 
   if (!user || !pass) return null;
