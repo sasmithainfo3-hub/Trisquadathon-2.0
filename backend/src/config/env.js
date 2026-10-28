@@ -13,7 +13,8 @@ export const config = {
   isProduction: process.env.NODE_ENV === 'production',
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
   mongodbUri: process.env.MONGODB_URI || 'mongodb://localhost:27017/safepath',
-  useMemoryDb: process.env.USE_MEMORY_DB === 'true' || (!process.env.MONGODB_URI && process.env.NODE_ENV !== 'production'),
+  hasExplicitMongoUri: Boolean(process.env.MONGODB_URI),
+  useMemoryDb: process.env.USE_MEMORY_DB === 'true' || !process.env.MONGODB_URI,
   jwt: {
     secret: process.env.JWT_SECRET || 'safepath_fallback_jwt_secret_min32chars_replace_in_prod',
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',

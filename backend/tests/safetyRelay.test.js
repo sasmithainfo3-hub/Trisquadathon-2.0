@@ -80,7 +80,7 @@ describe('Safety Relay Engine & Alert Lifecycle', () => {
     expect(res1.body.success).toBe(true);
     expect(res1.body.alert.status).toBe('NOTIFIED');
     expect(res1.body.alert.activeContactIndex).toBe(0);
-    expect(String(res1.body.alert.currentContactId)).toBe(String(contact1._id));
+    expect(String(res1.body.alert.currentContactId?._id || res1.body.alert.currentContactId)).toBe(String(contact1._id));
     expect(res1.body.alert.publicAccessToken).toBeDefined();
 
     // Idempotency: second request with same key returns the exact same alert

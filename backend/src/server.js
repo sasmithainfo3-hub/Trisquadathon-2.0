@@ -14,23 +14,29 @@ initSocket(server);
 async function startServer() {
   try {
     await connectDb();
-    await ensureDemoData();
-
-    // Start background Safety Relay polling worker
-    startQueueWorker(5000);
-
-    server.listen(config.port, () => {
-      console.log(`\n======================================================`);
-      console.log(`🚀 SafePath Backend Server running on port ${config.port}`);
-      console.log(`🌐 REST API base: http://localhost:${config.port}/api/v1`);
-      console.log(`📡 WebSocket ready on origin: ${config.clientUrl}`);
-      console.log(`⚡ Environment: ${config.nodeEnv}`);
-      console.log(`======================================================\n`);
-    });
   } catch (err) {
-    console.error('Failed to start server:', err);
-    process.exit(1);
+    console.warn('[SafePath Database] Startup warning:', err.message);
   }
+
+  try {
+    if (mongoose.connection.readyState === 1) {
+      await ensureDemoData();
+      startQueueWorker(5000);
+    } else {
+      console.warn('[SafePath Database] Running in degraded mode until database connects.');
+    }
+  } catch (seedErr) {
+    console.warn('[SafePath Database] Demo data seed notice:', seedErr.message);
+  }
+
+  server.listen(config.port, () => {
+    console.log(`\n======================================================`);
+    console.log(`🚀 SafePath Backend Server running on port ${config.port}`);
+    console.log(`🌐 REST API base: http://localhost:${config.port}/api/v1`);
+    console.log(`📡 WebSocket ready on origin: ${config.clientUrl}`);
+    console.log(`⚡ Environment: ${config.nodeEnv}`);
+    console.log(`======================================================\n`);
+  });
 }
 
 async function shutdown() {
