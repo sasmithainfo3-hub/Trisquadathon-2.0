@@ -1,0 +1,28 @@
+{
+  "name": "safepath-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SafePath - Real-world Women's Safety Web Product with Resilient Safety Relay",
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "dev": "node scripts/dev.js",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "start": "npm --prefix backend start",
+    "test": "npm --prefix backend test",
+    "seed": "npm --prefix backend run seed"
+  },
+  "keywords": [
+    "safety",
+    "safety-relay",
+    "women-safety",
+    "mern",
+    "leaflet",
+    "socketio",
+    "pwa"
+  ],
+  "author": "SafePath Engineering Team",
+  "license": "MIT"
+}
