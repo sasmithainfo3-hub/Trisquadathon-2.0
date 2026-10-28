@@ -23,6 +23,9 @@ export default function ContactsPage() {
       const res = await api.get('/contacts');
       if (res.success) {
         setContacts(res.contacts || []);
+        if (res.contacts && res.contacts.length > 0) {
+          localStorage.setItem('safepath_primary_contact', JSON.stringify(res.contacts[0]));
+        }
       }
     } catch (err) {
       console.error('Failed to load contacts:', err);

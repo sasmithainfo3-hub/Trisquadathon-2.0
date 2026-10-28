@@ -1,10 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  AlertTriangle,
   ShieldAlert,
+  AlertTriangle,
   X,
-  Send,
-  CheckCircle2,
   Volume2,
   VolumeX,
   MessageCircle,
@@ -14,14 +12,19 @@ import {
   Clock,
   Copy,
   Check,
-  Mail
+  CheckCircle2,
+  MapPin,
+  Mail,
+  Flame,
+  Radio,
+  HeartHandshake
 } from 'lucide-react';
 import { api } from '../utils/api';
 import { getSocket, joinRoom, leaveRoom } from '../utils/socket';
 import { enqueueOfflineEvent } from '../utils/idbQueue';
 import { useAuth } from '../context/AuthContext';
 
-// Web Audio API Emergency Siren generator
+// Web Audio API Dual-Tone Emergency Siren
 let sirenInterval = null;
 let audioContext = null;
 
@@ -47,16 +50,16 @@ function startSiren() {
         osc.connect(gain);
         gain.connect(audioContext.destination);
         osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(high ? 1300 : 900, audioContext.currentTime);
-        gain.gain.setValueAtTime(0.12, audioContext.currentTime);
+        osc.frequency.setValueAtTime(high ? 1350 : 880, audioContext.currentTime);
+        gain.gain.setValueAtTime(0.15, audioContext.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.32);
         osc.start();
         osc.stop(audioContext.currentTime + 0.32);
         high = !high;
       } catch (e) {}
-    }, 350);
+    }, 320);
   } catch (e) {
-    console.warn('Audio siren start error:', e);
+    console.warn('Audio siren start notice:', e);
   }
 }
 
@@ -75,18 +78,54 @@ function stopSiren() {
 
 export default function SOSModal({ isOpen, onClose, tripId, currentLocation, onAlertTriggered }) {
   const { user, isOnline } = useAuth();
-  const graceSeconds = user?.preferences?.emergencyGracePeriodSeconds || 10;
 
-  const [countdown, setCountdown] = useState(graceSeconds);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [dispatchedAlert, setDispatchedAlert] = useState(null);
   const [alertMeta, setAlertMeta] = useState(null);
   const [acknowledgedData, setAcknowledgedData] = useState(null);
   const [sirenPlaying, setSirenPlaying] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCoords, setCopiedCoords] = useState(false);
   const [error, setError] = useState(null);
 
-  // Auto-dispatch emergency immediately upon opening
+  // Cached primary contact from localStorage for instant offline access
+  const cachedContact = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('safepath_primary_contact') || 'null');
+    } catch (e) {
+      return null;
+    }
+  })();
+
+  // Current active contact resolution
+  const activeContact = alertMeta?.activeContact || dispatchedAlert?.currentContactId || cachedContact;
+  const contactName = activeContact?.name || 'Primary Contact';
+  const contactPhone = activeContact?.phone || '+917200843124';
+  const cleanPhone = contactPhone.replace(/[^0-9+]/g, '');
+
+  // Coords resolution
+  const lat = currentLocation?.latitude || 9.8743;
+  const lon = currentLocation?.longitude || 77.3747;
+  const googleMapsUrl = `https://www.google.com/maps?q=${lat},${lon}`;
+
+  // Responder tracking URL
+  const responderUrl =
+    alertMeta?.alertUrl ||
+    (dispatchedAlert?.publicAccessToken
+      ? `${window.location.origin}/respond/${dispatchedAlert.publicAccessToken}`
+      : `${window.location.origin}/dashboard`);
+
+  // Distress message payload with live GPS coordinates
+  const emergencyMessage = `🚨 URGENT EMERGENCY SOS! ${user?.name || 'A user'} is in immediate danger! My live GPS location: https://maps.google.com/?q=${lat},${lon} | Track live response: ${responderUrl}`;
+
+  // Direct native intent URLs
+  const policeCallUrl = 'tel:112';
+  const womenHelplineUrl = 'tel:1091';
+  const contactCallUrl = `tel:${cleanPhone}`;
+  const smsIntentUrl = `sms:${cleanPhone}?body=${encodeURIComponent(emergencyMessage)}`;
+  const waIntentUrl = alertMeta?.whatsappUrl || `https://api.whatsapp.com/send?phone=${cleanPhone.replace(/^\+/, '')}&text=${encodeURIComponent(emergencyMessage)}`;
+
+  // Auto-dispatch on open & start audio siren
   useEffect(() => {
     if (!isOpen) {
       setDispatchedAlert(null);
@@ -98,8 +137,9 @@ export default function SOSModal({ isOpen, onClose, tripId, currentLocation, onA
       return;
     }
 
-    // Immediately trigger emergency dispatch without manual delay!
-    executeDispatch(true);
+    startSiren();
+    setSirenPlaying(true);
+    executeDispatch();
   }, [isOpen]);
 
   // Clean up siren on unmount
@@ -137,35 +177,19 @@ export default function SOSModal({ isOpen, onClose, tripId, currentLocation, onA
     }
   };
 
-  const executeDispatch = async (bypassGrace = true) => {
+  const executeDispatch = async () => {
     setIsSubmitting(true);
     setError(null);
 
-    // Get freshest coordinates
-    let lat = currentLocation?.latitude;
-    let lon = currentLocation?.longitude;
-    let address = currentLocation?.address || 'Current Location';
-
-    if (!lat) {
-      try {
-        const saved = localStorage.getItem('safepath_last_coords');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          lat = parsed.latitude;
-          lon = parsed.longitude;
-        }
-      } catch (e) {}
-    }
-
     const payload = {
       tripId: tripId || null,
-      latitude: lat || 9.8743,
-      longitude: lon || 77.3747,
-      accuracy: currentLocation?.accuracy || 12,
-      address,
+      latitude: lat,
+      longitude: lon,
+      accuracy: currentLocation?.accuracy || 10,
+      address: currentLocation?.address || 'Current Location',
       explanation: 'Manual Emergency SOS triggered by user.',
       idempotencyKey: `manual-sos-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      bypassGrace: true // Dispatches immediately to contacts
+      bypassGrace: true
     };
 
     try {
@@ -173,29 +197,18 @@ export default function SOSModal({ isOpen, onClose, tripId, currentLocation, onA
         await enqueueOfflineEvent('MANUAL_EMERGENCY', payload);
         setDispatchedAlert({
           status: 'QUEUED_OFFLINE',
-          message: 'Offline: Emergency alert queued locally and will dispatch the second connection returns.'
+          message: 'Offline: Emergency alert queued locally.'
         });
       } else {
         const res = await api.post('/alerts/manual', payload);
         if (res.success) {
           setDispatchedAlert(res.alert);
           setAlertMeta(res);
-          startSiren();
-          setSirenPlaying(true);
           if (onAlertTriggered) onAlertTriggered(res.alert);
-
-          // AUTOMATIC DISPATCH: Automatically launch WhatsApp to the contact's phone!
-          if (res.whatsappUrl) {
-            try {
-              window.open(res.whatsappUrl, '_blank', 'noopener,noreferrer');
-            } catch (e) {
-              console.warn('WhatsApp auto-launch popup blocked by browser, available via button:', e);
-            }
-          }
         }
       }
     } catch (err) {
-      setError(err.message || 'Failed to trigger emergency alert.');
+      setError(err.message || 'Server alert dispatch encountered a delay.');
     } finally {
       setIsSubmitting(false);
     }
@@ -216,21 +229,24 @@ export default function SOSModal({ isOpen, onClose, tripId, currentLocation, onA
   };
 
   const handleCopyAlertLink = () => {
-    const url = alertMeta?.alertUrl || `${window.location.origin}/respond/${dispatchedAlert?.publicAccessToken}`;
-    navigator.clipboard.writeText(url);
+    navigator.clipboard.writeText(responderUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 3000);
   };
 
+  const handleCopyCoords = () => {
+    navigator.clipboard.writeText(`${lat.toFixed(5)}, ${lon.toFixed(5)} (${googleMapsUrl})`);
+    setCopiedCoords(true);
+    setTimeout(() => setCopiedCoords(false), 3000);
+  };
+
   const handleNativeShare = async () => {
-    const url = alertMeta?.alertUrl || `${window.location.origin}/respond/${dispatchedAlert?.publicAccessToken}`;
-    const text = `🚨 URGENT EMERGENCY ALERT: ${user?.name || 'A SafePath User'} needs immediate assistance! Track live location and acknowledge here:`;
     if (navigator.share) {
       try {
         await navigator.share({
           title: '🚨 SafePath Emergency SOS Alert',
-          text,
-          url
+          text: emergencyMessage,
+          url: responderUrl
         });
       } catch (e) {}
     } else {
@@ -240,12 +256,10 @@ export default function SOSModal({ isOpen, onClose, tripId, currentLocation, onA
 
   if (!isOpen) return null;
 
-  const responderUrl = alertMeta?.alertUrl || (dispatchedAlert?.publicAccessToken ? `${window.location.origin}/respond/${dispatchedAlert.publicAccessToken}` : null);
-  const activeContact = alertMeta?.activeContact || dispatchedAlert?.currentContactId;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-slate-900 border-2 border-rose-500 rounded-3xl p-6 max-w-lg w-full shadow-2xl shadow-rose-950/80 text-slate-100 relative max-h-[92vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-slate-900 border-2 border-rose-500 rounded-3xl p-5 sm:p-6 max-w-lg w-full shadow-2xl shadow-rose-950/80 text-slate-100 relative max-h-[94vh] overflow-y-auto space-y-4">
+        {/* Close / Cancel Button */}
         <button
           onClick={handleCancel}
           className="absolute top-4 right-4 text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-slate-800 transition-colors"
@@ -254,277 +268,236 @@ export default function SOSModal({ isOpen, onClose, tripId, currentLocation, onA
           <X className="w-5 h-5" />
         </button>
 
-        {!dispatchedAlert ? (
-          /* Automatic Dispatching Indicator */
-          <div className="text-center space-y-5 py-4">
-            <div className="w-16 h-16 rounded-3xl bg-rose-500/20 border-2 border-rose-500 flex items-center justify-center mx-auto text-rose-500 shadow-xl shadow-rose-500/30 animate-pulse">
-              <ShieldAlert className="w-9 h-9 animate-bounce" />
-            </div>
+        {/* Emergency Beacon Strobe Header */}
+        <div className="text-center space-y-2 pt-1">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-600/20 border border-rose-500 text-rose-400 text-xs font-black uppercase tracking-wider animate-pulse">
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
+            <span>🚨 EMERGENCY SOS ACTIVE 🚨</span>
+          </div>
+          <h3 className="text-2xl font-black text-white tracking-tight">
+            Safety Command Center
+          </h3>
+          <p className="text-xs text-rose-300 font-medium">
+            Immediate 1-tap mobile action triggers below for life-safety response.
+          </p>
+        </div>
 
-            <div>
-              <h3 className="text-2xl font-black text-white tracking-tight">EMERGENCY SOS ACTIVATED</h3>
-              <p className="text-xs text-rose-300 font-semibold mt-1 max-w-sm mx-auto">
-                Automatically dispatching Safety Relay, sending emergency emails, and launching WhatsApp...
-              </p>
-            </div>
-
-            <div className="py-4 px-6 bg-slate-950/60 rounded-2xl border border-rose-500/40 space-y-2">
-              <div className="flex items-center justify-center gap-2 text-rose-400 font-bold text-sm animate-pulse">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
-                <span>Dispatching to Safety Circle Responders...</span>
-              </div>
-              <p className="text-[11px] text-slate-400">
-                Email and WhatsApp notifications are being triggered automatically.
-              </p>
-            </div>
-
-            {error && (
-              <div className="p-3 bg-rose-950/60 border border-rose-500/50 rounded-xl text-xs text-rose-300">
-                {error}
-              </div>
+        {/* Audible Siren Controller Banner */}
+        <div className="p-3 rounded-2xl bg-rose-950/40 border border-rose-500/50 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 text-xs">
+            {sirenPlaying ? (
+              <Volume2 className="w-5 h-5 text-rose-400 animate-bounce" />
+            ) : (
+              <VolumeX className="w-5 h-5 text-slate-500" />
             )}
+            <div>
+              <p className="font-bold text-white text-xs">
+                {sirenPlaying ? 'High-Decibel Siren Sounding' : 'Audible Alarm Muted'}
+              </p>
+              <p className="text-[10px] text-slate-400">Piercing alarm to deter threats and alert bystanders</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={toggleSiren}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+              sirenPlaying
+                ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/30'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+            }`}
+          >
+            {sirenPlaying ? 'Mute' : 'Sound Alarm'}
+          </button>
+        </div>
 
-            <button
-              onClick={handleCancel}
-              className="py-2.5 px-6 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl text-xs transition-colors mx-auto"
+        {/* CORE MOBILE EMERGENCY ACTION GRID (Instant 1-Tap Execution) */}
+        <div className="space-y-2 pt-1">
+          <p className="text-[11px] uppercase tracking-wider font-extrabold text-amber-400 flex items-center gap-1.5">
+            <Flame className="w-3.5 h-3.5 text-rose-500" />
+            <span>Immediate 1-Tap Direct Actions:</span>
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {/* 1. CALL POLICE (112) */}
+            <a
+              href={policeCallUrl}
+              className="p-3 bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-extrabold rounded-2xl flex items-center justify-between shadow-lg shadow-red-600/40 transition-all active:scale-95 border border-red-400/40"
             >
-              Cancel Alarm (False Alarm)
+              <div className="flex items-center gap-2.5 text-left">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+                  <Phone className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-red-200 font-bold">Police / Helpline</p>
+                  <p className="text-base font-black leading-tight">CALL 112</p>
+                </div>
+              </div>
+              <span className="text-[10px] bg-red-950/70 px-2 py-0.5 rounded-lg border border-red-500/50">Toll-Free</span>
+            </a>
+
+            {/* 2. CALL TRUSTED CONTACT */}
+            <a
+              href={contactCallUrl}
+              className="p-3 bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-500 hover:to-blue-600 text-white font-extrabold rounded-2xl flex items-center justify-between shadow-lg shadow-sky-600/40 transition-all active:scale-95 border border-sky-400/40"
+            >
+              <div className="flex items-center gap-2.5 text-left truncate">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                  <Phone className="w-5 h-5 text-white" />
+                </div>
+                <div className="truncate">
+                  <p className="text-xs uppercase tracking-wider text-sky-200 font-bold truncate">Call {contactName}</p>
+                  <p className="text-sm font-black leading-tight truncate">{contactPhone}</p>
+                </div>
+              </div>
+              <span className="text-[10px] bg-sky-950/70 px-2 py-0.5 rounded-lg border border-sky-500/50 shrink-0">Priority #1</span>
+            </a>
+
+            {/* 3. SEND DIRECT SMS WITH LIVE GPS */}
+            <a
+              href={smsIntentUrl}
+              className="p-3 bg-gradient-to-r from-amber-600 to-orange-700 hover:from-amber-500 hover:to-orange-600 text-white font-extrabold rounded-2xl flex items-center justify-between shadow-lg shadow-amber-600/40 transition-all active:scale-95 border border-amber-400/40"
+            >
+              <div className="flex items-center gap-2.5 text-left">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+                  <MessageCircle className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-amber-200 font-bold">Direct Phone SMS</p>
+                  <p className="text-sm font-black leading-tight">Send GPS SMS</p>
+                </div>
+              </div>
+              <span className="text-[10px] bg-amber-950/70 px-2 py-0.5 rounded-lg border border-amber-500/50">Auto-GPS</span>
+            </a>
+
+            {/* 4. SEND DIRECT WHATSAPP */}
+            <a
+              href={waIntentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-3 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white font-extrabold rounded-2xl flex items-center justify-between shadow-lg shadow-emerald-600/40 transition-all active:scale-95 border border-emerald-400/40"
+            >
+              <div className="flex items-center gap-2.5 text-left">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+                  <MessageCircle className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-emerald-200 font-bold">Instant Chat</p>
+                  <p className="text-sm font-black leading-tight">WhatsApp Distress</p>
+                </div>
+              </div>
+              <span className="text-[10px] bg-emerald-950/70 px-2 py-0.5 rounded-lg border border-emerald-500/50">1-Tap</span>
+            </a>
+          </div>
+
+          {/* Secondary Quick Action Row */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+            {/* Women Helpline */}
+            <a
+              href={womenHelplineUrl}
+              className="py-2 px-3 bg-slate-800 hover:bg-slate-700 border border-rose-500/30 text-rose-300 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <Phone className="w-3.5 h-3.5 text-rose-400" />
+              <span>Women: 1091</span>
+            </a>
+
+            {/* Google Maps Pin */}
+            <a
+              href={googleMapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="py-2 px-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Open Maps Pin</span>
+            </a>
+
+            {/* Native Share to Any App */}
+            <button
+              type="button"
+              onClick={handleNativeShare}
+              className="col-span-2 sm:col-span-1 py-2 px-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <Share2 className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Share to Apps</span>
             </button>
           </div>
-        ) : (
-          /* STEP 2: Active Emergency Dispatched Command Center */
-          <div className="space-y-5">
-            {/* Top alert state header */}
-            <div className="text-center space-y-1">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-950 border border-rose-500/50 text-rose-300 text-xs font-bold uppercase tracking-wider animate-pulse mb-2">
-                <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-                Emergency Alert Active
-              </div>
-              <h3 className="text-xl font-black text-white">Safety Relay Dispatched</h3>
-              <p className="text-xs text-slate-300">
-                Live location and incident tracking have been activated.
-              </p>
-            </div>
+        </div>
 
-            {/* Audio Siren Banner */}
-            <div className="p-3 rounded-2xl bg-slate-950/80 border border-rose-500/40 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 text-xs">
-                {sirenPlaying ? (
-                  <Volume2 className="w-5 h-5 text-rose-400 animate-bounce" />
-                ) : (
-                  <VolumeX className="w-5 h-5 text-slate-500" />
-                )}
-                <div>
-                  <p className="font-bold text-white text-xs">
-                    {sirenPlaying ? 'Emergency Siren Sounding' : 'Audio Alarm Muted'}
-                  </p>
-                  <p className="text-[10px] text-slate-400">Audible alarm playing on device speakers</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={toggleSiren}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                  sirenPlaying
-                    ? 'bg-rose-600 hover:bg-rose-500 text-white'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                }`}
-              >
-                {sirenPlaying ? 'Mute Alarm' : 'Sound Alarm'}
-              </button>
-            </div>
+        {/* Real-Time Responder Acknowledgment & Cloud Status */}
+        <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-indigo-700/40 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-bold text-indigo-400 flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
+              <Radio className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+              Cloud Relay Dispatch Status
+            </span>
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-900/80 text-indigo-200">
+              {acknowledgedData ? 'ACKNOWLEDGED' : 'ACTIVE DISPATCH'}
+            </span>
+          </div>
 
-            {/* Responder & Acknowledgment Status Card */}
-            <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-700/50 space-y-2.5">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-[11px] uppercase tracking-wider font-bold text-indigo-400 flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5" />
-                  Primary Responder
-                </span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-900/80 text-indigo-200">
-                  Priority #1
-                </span>
-              </div>
-
-              {acknowledgedData ? (
-                <div className="p-3 bg-emerald-950/80 border border-emerald-500/60 rounded-xl space-y-1 animate-in zoom-in-95">
-                  <div className="flex items-center gap-2 text-emerald-300 font-bold text-xs">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    <span>✓ Acknowledged by {acknowledgedData.contactName || 'Responder'}</span>
-                  </div>
-                  <p className="text-xs text-slate-200 pl-6 italic">
-                    "{acknowledgedData.responseNote || 'I am on my way.'}"
-                  </p>
-                  <p className="text-[10px] text-emerald-400 pl-6">
-                    Safety Relay escalation stopped. Responder is actively handling.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-bold text-white">
-                      {activeContact?.name || 'Primary Trusted Contact'}
-                    </h4>
-                    <span className="text-xs text-slate-400">
-                      {activeContact?.relationship || 'Contact'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-amber-300 flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-                    Awaiting acknowledgment (Escalates to Priority #2 in 10 mins if no response)
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Automatic Real-Time Dispatch Summary */}
-            <div className="p-3 bg-emerald-950/60 border border-emerald-600/50 rounded-2xl space-y-1.5">
+          {acknowledgedData ? (
+            <div className="p-2.5 bg-emerald-950/80 border border-emerald-500/60 rounded-xl space-y-1">
               <div className="flex items-center gap-2 text-emerald-300 font-bold text-xs">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Automated Alert Dispatch Complete:</span>
+                <span>✓ {acknowledgedData.contactName || 'Responder'} is responding!</span>
               </div>
-              <div className="text-[11px] text-slate-300 space-y-1 pl-6">
-                <p className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                  <span><strong>Email Dispatched:</strong> Incident notification sent to <strong>{activeContact?.email || 'Safety Contact'}</strong></span>
-                </p>
-                {activeContact?.phone && (
-                  <p className="flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                    <span><strong>WhatsApp Dispatched:</strong> Emergency chat launched for <strong>{activeContact.phone}</strong></span>
-                  </p>
-                )}
-                <p className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                  <span><strong>Live GPS Tracker:</strong> Live location broadcast active on Safety Relay</span>
-                </p>
-              </div>
-            </div>
-
-            {/* Direct Responder Action Buttons */}
-            <div className="space-y-2">
-              <p className="text-[11px] uppercase tracking-wider font-bold text-slate-400">
-                Direct Responder Delivery Options:
+              <p className="text-xs text-slate-200 pl-6 italic">
+                "{acknowledgedData.responseNote || 'I am on my way.'}"
               </p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {/* 1. Direct WhatsApp Message to Contact */}
-                {activeContact?.phone ? (
-                  <a
-                    href={
-                      alertMeta?.whatsappUrl ||
-                      `https://api.whatsapp.com/send?phone=${encodeURIComponent(
-                        activeContact.phone.replace(/[^0-9+]/g, '')
-                      )}&text=${encodeURIComponent(
-                        `🚨 URGENT EMERGENCY SOS! I need help. View my live GPS location and acknowledge here: ${responderUrl}`
-                      )}`
-                    }
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-600/30 transition-all active:scale-95"
-                  >
-                    <MessageCircle className="w-4 h-4" />
-                    Send via WhatsApp
-                  </a>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleNativeShare}
-                    className="py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-600/30 transition-all active:scale-95"
-                  >
-                    <MessageCircle className="w-4 h-4" />
-                    Share on WhatsApp
-                  </button>
-                )}
-
-                {/* 2. Direct Phone Call */}
-                {activeContact?.phone ? (
-                  <a
-                    href={`tel:${activeContact.phone.replace(/\s+/g, '')}`}
-                    className="py-2.5 px-3 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-sky-600/30 transition-all active:scale-95"
-                  >
-                    <Phone className="w-4 h-4" />
-                    Call {activeContact.phone}
-                  </a>
-                ) : (
-                  <a
-                    href="tel:911"
-                    className="py-2.5 px-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-red-600/30 transition-all active:scale-95"
-                  >
-                    <Phone className="w-4 h-4" />
-                    Call Emergency Services
-                  </a>
-                )}
-
-                {/* 3. Direct Gmail Compose */}
-                {activeContact?.email && (
-                  <a
-                    href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(activeContact.email)}&su=${encodeURIComponent('URGENT: SafePath Emergency SOS Alert')}&body=${encodeURIComponent(`Hello ${activeContact.name},\n\nI have triggered a SafePath Emergency SOS Alert! View my live GPS location and acknowledge here:\n${responderUrl}\n\nThank you!`)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="py-2.5 px-3 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 border border-slate-700 shadow-md transition-all active:scale-95"
-                  >
-                    <Mail className="w-4 h-4 text-indigo-400" />
-                    Email via Gmail
-                  </a>
-                )}
-
-                {/* 4. Open Responder Incident Tracker Page directly */}
-                {responderUrl && (
-                  <a
-                    href={responderUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/30 transition-all active:scale-95"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    Open Responder View
-                  </a>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={handleCopyAlertLink}
-                  className="flex-1 py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-xl flex items-center justify-center gap-1.5 border border-slate-700 transition-colors"
-                >
-                  {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-indigo-400" />}
-                  <span>{copiedLink ? 'Link Copied!' : 'Copy Incident Link'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleNativeShare}
-                  className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-xl flex items-center justify-center gap-1.5 border border-slate-700 transition-colors"
-                  title="Broadcast to any app"
-                >
-                  <Share2 className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Share</span>
-                </button>
-              </div>
             </div>
-
-            {/* Bottom Actions */}
-            <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={handleCancel}
-                className="px-4 py-2 bg-rose-950/80 hover:bg-rose-900 border border-rose-700/50 text-rose-300 rounded-xl text-xs font-bold transition-colors"
-              >
-                Cancel Alarm (Safe Now)
-              </button>
-
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-colors"
-              >
-                Close Modal
-              </button>
+          ) : (
+            <div className="text-[11px] text-slate-300 space-y-1">
+              <p className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+                <span><strong>Gmail SMTP Dispatch:</strong> Automated email alert sent to <strong>{activeContact?.email || 'Registered Contact'}</strong></span>
+              </p>
+              <p className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-indigo-400 shrink-0"></span>
+                <span><strong>Live GPS Pin:</strong> {lat.toFixed(5)}, {lon.toFixed(5)} broadcast active</span>
+              </p>
             </div>
+          )}
+
+          {/* Quick Copy Link & Coordinates */}
+          <div className="flex items-center gap-2 pt-1 border-t border-slate-800/80">
+            <button
+              type="button"
+              onClick={handleCopyAlertLink}
+              className="flex-1 py-1.5 px-2 bg-slate-900 hover:bg-slate-800 text-slate-300 text-[11px] font-medium rounded-lg flex items-center justify-center gap-1 border border-slate-700/80 transition-colors"
+            >
+              {copiedLink ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 text-indigo-400" />}
+              <span>{copiedLink ? 'Link Copied!' : 'Copy Incident URL'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCopyCoords}
+              className="flex-1 py-1.5 px-2 bg-slate-900 hover:bg-slate-800 text-slate-300 text-[11px] font-medium rounded-lg flex items-center justify-center gap-1 border border-slate-700/80 transition-colors"
+            >
+              {copiedCoords ? <Check className="w-3 h-3 text-emerald-400" /> : <MapPin className="w-3 h-3 text-emerald-400" />}
+              <span>{copiedCoords ? 'GPS Copied!' : 'Copy GPS Coords'}</span>
+            </button>
           </div>
-        )}
+        </div>
+
+        {/* Bottom Control Actions */}
+        <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={handleCancel}
+            className="px-4 py-2 bg-rose-950/80 hover:bg-rose-900 border border-rose-700/50 text-rose-300 rounded-xl text-xs font-bold transition-colors"
+          >
+            I Am Safe (Cancel Alarm)
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition-colors"
+          >
+            Dismiss Screen
+          </button>
+        </div>
       </div>
     </div>
   );
