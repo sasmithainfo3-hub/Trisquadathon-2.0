@@ -1,4 +1,7 @@
-const BASE_URL = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' && window.location.port === '5173' ? 'http://localhost:5000/api/v1' : '/api/v1');
+const BASE_URL = import.meta.env.VITE_API_URL || 
+  (typeof window !== 'undefined' && (window.location.hostname.includes('vercel.app') || (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'))
+    ? 'https://trisquadathon-2-0.onrender.com/api/v1'
+    : (typeof window !== 'undefined' && window.location.port === '5173' ? 'http://localhost:5000/api/v1' : '/api/v1'));
 
 async function request(endpoint, options = {}) {
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;

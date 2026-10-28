@@ -5,7 +5,10 @@ let socket = null;
 export function getSocket() {
   if (!socket) {
     const token = localStorage.getItem('safepath_token');
-    const socketServerUrl = import.meta.env.VITE_SOCKET_URL || (typeof window !== 'undefined' && window.location.port === '5173' ? 'http://localhost:5000' : window.location.origin);
+    const socketServerUrl = import.meta.env.VITE_SOCKET_URL || 
+      (typeof window !== 'undefined' && (window.location.hostname.includes('vercel.app') || (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'))
+        ? 'https://trisquadathon-2-0.onrender.com'
+        : (typeof window !== 'undefined' && window.location.port === '5173' ? 'http://localhost:5000' : window.location.origin));
     socket = io(socketServerUrl, {
       auth: { token },
       withCredentials: true,
