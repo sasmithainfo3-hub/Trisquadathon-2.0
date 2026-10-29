@@ -1,8 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Settings, Shield, User, Bell, Trash2, Download, CheckCircle2, AlertTriangle, Lock } from 'lucide-react';
+import { Settings, Shield, User, Bell, Trash2, Download, CheckCircle2, AlertTriangle, Lock, Volume2, VolumeX, BellRing } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
+import {
+  isBreakthroughEnabled,
+  setBreakthroughEnabled,
+  triggerUnsilentReminder
+} from '../utils/silentBreakthrough';
 
 export default function SettingsPage() {
   const { user, updatePreferences, logout } = useAuth();
@@ -17,6 +22,7 @@ export default function SettingsPage() {
   const [notifyPush, setNotifyPush] = useState(user?.preferences?.notifyPush ?? true);
   const [notifySms, setNotifySms] = useState(user?.preferences?.notifySms ?? false);
   const [dataRetentionDays, setDataRetentionDays] = useState(user?.dataRetentionDays || 30);
+  const [unsilentReminder, setUnsilentReminder] = useState(isBreakthroughEnabled());
 
   const [profileSaving, setProfileSaving] = useState(false);
   const [prefsSaving, setPrefsSaving] = useState(false);
@@ -46,6 +52,7 @@ export default function SettingsPage() {
     e.preventDefault();
     setPrefsSaving(true);
     try {
+      setBreakthroughEnabled(unsilentReminder);
       await updatePreferences({
         checkInGracePeriodMinutes: Number(checkInGrace),
         defaultEscalationTimeoutMinutes: Number(escalationTimeout),
@@ -269,6 +276,66 @@ export default function SettingsPage() {
                 />
                 <span className="text-xs text-slate-300 font-semibold">Twilio SMS</span>
               </label>
+            </div>
+          </div>
+
+          {/* Silent Mode Breakthrough Setting */}
+          <div className="p-4 rounded-xl bg-slate-900 border border-indigo-500/30 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className={`p-2 rounded-lg ${unsilentReminder ? 'bg-indigo-600/30 text-indigo-400' : 'bg-slate-800 text-slate-500'}`}>
+                  {unsilentReminder ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white flex items-center gap-2">
+                    Unsilent Phone for Check-In Reminders
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">
+                      MEDIA CHANNEL
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    Bypasses phone silent/vibrate switch to sound safety check-in reminders and grace period alerts via media audio.
+                  </p>
+                </div>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={unsilentReminder}
+                  onChange={(e) => {
+                    const val = e.target.checked;
+                    setUnsilentReminder(val);
+                    setBreakthroughEnabled(val);
+                    if (val) {
+                      triggerUnsilentReminder({
+                        title: '🔊 Unsilent Mode Enabled',
+                        body: 'SafePath check-in reminders will sound through media audio even if phone is on silent.',
+                        type: 'checkin'
+                      });
+                    }
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-[11px]">
+              <span className="text-slate-400">Hear what the reminder alert sounds like:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerUnsilentReminder({
+                    title: '🔔 SafePath Test Chime',
+                    body: 'This chime plays on the media channel to bypass your phone silent switch.',
+                    type: 'warning'
+                  });
+                }}
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded-lg font-semibold flex items-center gap-1.5 transition-colors border border-slate-700 hover:border-indigo-500/50"
+              >
+                <BellRing className="w-3 h-3 text-amber-400" /> Test Breakthrough Chime
+              </button>
             </div>
           </div>
 

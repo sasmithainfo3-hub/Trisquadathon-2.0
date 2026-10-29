@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Shield, Clock, CheckCircle2, ShieldAlert, AlertTriangle, Navigation, MapPin, RefreshCw, PlusCircle, ArrowLeft } from 'lucide-react';
+import { Shield, Clock, CheckCircle2, ShieldAlert, AlertTriangle, Navigation, MapPin, RefreshCw, PlusCircle, ArrowLeft, BellRing, Volume2, VolumeX } from 'lucide-react';
 import { api } from '../utils/api';
 import { getSocket, joinRoom, leaveRoom } from '../utils/socket';
 import { enqueueOfflineEvent } from '../utils/idbQueue';
@@ -9,6 +9,15 @@ import LocationMap from '../components/LocationMap';
 import SOSModal from '../components/SOSModal';
 import HoldToTriggerButton from '../components/HoldToTriggerButton';
 import SafetyRelayTimeline from '../components/SafetyRelayTimeline';
+import {
+  triggerUnsilentReminder,
+  requestScreenWakeLock,
+  releaseScreenWakeLock,
+  isBreakthroughEnabled,
+  setBreakthroughEnabled,
+  playBreakthroughChime,
+  triggerBreakthroughHaptics
+} from '../utils/silentBreakthrough';
 
 export default function ActiveJourneyPage() {
   const navigate = useNavigate();
@@ -23,8 +32,21 @@ export default function ActiveJourneyPage() {
   const [sosModalOpen, setSosModalOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState(null);
   const [lastLocationUpdateTime, setLastLocationUpdateTime] = useState(new Date());
+  const [unsilentEnabled, setUnsilentEnabled] = useState(isBreakthroughEnabled());
 
   const watchIdRef = useRef(null);
+  const lastAlertTimeRef = useRef(0);
+
+  // Keep screen awake during journey & request notification permission
+  useEffect(() => {
+    requestScreenWakeLock();
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+    return () => {
+      releaseScreenWakeLock();
+    };
+  }, []);
 
   // Fetch active trip
   useEffect(() => {
@@ -139,6 +161,25 @@ export default function ActiveJourneyPage() {
 
     return () => clearInterval(interval);
   }, [nextCheckIn]);
+
+  // Breakthrough Unsilent Reminder when Check-In is due / grace active
+  useEffect(() => {
+    if (!nextCheckIn?.dueAt || !unsilentEnabled) return;
+    const now = Date.now();
+    const isDue = new Date(nextCheckIn.dueAt).getTime() <= now;
+
+    if (isDue) {
+      // Throttle reminder alerts so they sound every 30 seconds while check-in is pending/grace active
+      if (now - lastAlertTimeRef.current > 30000) {
+        lastAlertTimeRef.current = now;
+        triggerUnsilentReminder({
+          title: '⏰ SafePath Check-In Due!',
+          body: 'Your scheduled journey check-in is due now. Tap to confirm you are safe.',
+          type: 'warning'
+        });
+      }
+    }
+  }, [secondsRemaining, nextCheckIn, unsilentEnabled]);
 
   // Manual Check-In action
   const handleAcknowledgeCheckIn = async () => {
@@ -318,6 +359,65 @@ export default function ActiveJourneyPage() {
               <CheckCircle2 className="w-5 h-5" />
               {checkInLoading ? 'Confirming...' : "I'm Safe (Confirm Check-In)"}
             </button>
+          </div>
+
+          {/* Unsilent Breakthrough Reminder Control */}
+          <div className="glass-panel p-4 rounded-xl border border-indigo-500/30 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className={`p-2 rounded-lg ${unsilentEnabled ? 'bg-indigo-600/30 text-indigo-400' : 'bg-slate-800 text-slate-500'}`}>
+                  {unsilentEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    Unsilent Reminder Mode
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">
+                      MEDIA CHANNEL
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Bypasses silent switch to sound due check-ins
+                  </p>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={unsilentEnabled}
+                  onChange={(e) => {
+                    const val = e.target.checked;
+                    setUnsilentEnabled(val);
+                    setBreakthroughEnabled(val);
+                    if (val) {
+                      triggerUnsilentReminder({
+                        title: '🔊 Unsilent Mode Active',
+                        body: 'SafePath check-in alerts will play through media speaker even if phone is muted.',
+                        type: 'checkin'
+                      });
+                    }
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-[11px]">
+              <span className="text-slate-400">Test reminder chime & vibration:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerUnsilentReminder({
+                    title: '🔔 SafePath Test Chime',
+                    body: 'This chime plays on the media channel to bypass your phone silent switch.',
+                    type: 'warning'
+                  });
+                }}
+                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded-lg font-semibold flex items-center gap-1.5 transition-colors border border-slate-700 hover:border-indigo-500/50"
+              >
+                <BellRing className="w-3 h-3 text-amber-400" /> Test Chime
+              </button>
+            </div>
           </div>
 
           {/* GPS Freshness & Accuracy Telemetry */}
