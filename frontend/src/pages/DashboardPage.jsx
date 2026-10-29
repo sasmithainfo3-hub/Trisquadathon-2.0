@@ -4,6 +4,7 @@ import { Shield, Navigation, AlertTriangle, Users, Clock, ArrowRight, ShieldAler
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
 import SOSModal from '../components/SOSModal';
+import HoldToTriggerButton from '../components/HoldToTriggerButton';
 import SafetyRelayTimeline from '../components/SafetyRelayTimeline';
 
 export default function DashboardPage() {
@@ -73,14 +74,19 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* Big Quick SOS Trigger Button */}
-        <button
-          onClick={() => setSosModalOpen(true)}
-          className="self-start sm:self-auto px-6 py-3 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-extrabold rounded-2xl shadow-xl shadow-rose-950/60 border border-rose-400/40 flex items-center gap-2.5 transition-all hover:scale-105 active:scale-95 text-sm"
-        >
-          <ShieldAlert className="w-5 h-5 text-white animate-pulse" />
-          EMERGENCY SOS
-        </button>
+        {/* Hold-to-Activate Silent SOS Button */}
+        <div className="flex flex-col items-start sm:items-end gap-1.5">
+          <HoldToTriggerButton
+            size="large"
+            label="HOLD FOR SILENT SOS"
+            sublabel="Press & hold 1.5s or Shake Phone"
+            onTrigger={() => setSosModalOpen(true)}
+          />
+          <span className="text-[10px] text-slate-400 flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            Stealth Mode: No alarm noise will play
+          </span>
+        </div>
       </div>
 
       {/* Active Alert Banner (If in emergency) */}

@@ -125,7 +125,7 @@ export default function SOSModal({ isOpen, onClose, tripId, currentLocation, onA
   const smsIntentUrl = `sms:${cleanPhone}?body=${encodeURIComponent(emergencyMessage)}`;
   const waIntentUrl = alertMeta?.whatsappUrl || `https://api.whatsapp.com/send?phone=${cleanPhone.replace(/^\+/, '')}&text=${encodeURIComponent(emergencyMessage)}`;
 
-  // Auto-dispatch on open & start audio siren
+  // Auto-dispatch on open in SILENT STEALTH MODE (Zero audio noise!)
   useEffect(() => {
     if (!isOpen) {
       setDispatchedAlert(null);
@@ -137,8 +137,14 @@ export default function SOSModal({ isOpen, onClose, tripId, currentLocation, onA
       return;
     }
 
-    startSiren();
-    setSirenPlaying(true);
+    // Discreet haptic vibration (silent on phone)
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      try {
+        navigator.vibrate([150, 70, 150, 70, 250]);
+      } catch (e) {}
+    }
+    stopSiren();
+    setSirenPlaying(false);
     executeDispatch();
   }, [isOpen]);
 
@@ -282,31 +288,35 @@ export default function SOSModal({ isOpen, onClose, tripId, currentLocation, onA
           </p>
         </div>
 
-        {/* Audible Siren Controller Banner */}
-        <div className="p-3 rounded-2xl bg-rose-950/40 border border-rose-500/50 flex items-center justify-between gap-3">
+        {/* Silent Mode Indicator & Optional Siren Controller */}
+        <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-700/60 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 text-xs">
             {sirenPlaying ? (
-              <Volume2 className="w-5 h-5 text-rose-400 animate-bounce" />
+              <Volume2 className="w-5 h-5 text-rose-400 animate-bounce shrink-0" />
             ) : (
-              <VolumeX className="w-5 h-5 text-slate-500" />
+              <VolumeX className="w-5 h-5 text-emerald-400 shrink-0" />
             )}
             <div>
               <p className="font-bold text-white text-xs">
-                {sirenPlaying ? 'High-Decibel Siren Sounding' : 'Audible Alarm Muted'}
+                {sirenPlaying ? 'Audible Alarm Sounding' : '🤫 Silent Stealth Mode (Sound is OFF)'}
               </p>
-              <p className="text-[10px] text-slate-400">Piercing alarm to deter threats and alert bystanders</p>
+              <p className="text-[10px] text-slate-400">
+                {sirenPlaying
+                  ? 'Playing loud siren to alert bystanders'
+                  : 'Zero noise generated to protect your safety and avoid detection'}
+              </p>
             </div>
           </div>
           <button
             type="button"
             onClick={toggleSiren}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
               sirenPlaying
                 ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/30'
-                : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600'
             }`}
           >
-            {sirenPlaying ? 'Mute' : 'Sound Alarm'}
+            {sirenPlaying ? 'Mute Siren' : 'Sound Alarm'}
           </button>
         </div>
 

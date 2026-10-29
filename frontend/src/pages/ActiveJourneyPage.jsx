@@ -7,6 +7,7 @@ import { enqueueOfflineEvent } from '../utils/idbQueue';
 import { useAuth } from '../context/AuthContext';
 import LocationMap from '../components/LocationMap';
 import SOSModal from '../components/SOSModal';
+import HoldToTriggerButton from '../components/HoldToTriggerButton';
 import SafetyRelayTimeline from '../components/SafetyRelayTimeline';
 
 export default function ActiveJourneyPage() {
@@ -243,12 +244,12 @@ export default function ActiveJourneyPage() {
 
         {/* Action Controls */}
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setSosModalOpen(true)}
-            className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-extrabold rounded-xl shadow-lg shadow-rose-600/40 text-xs flex items-center gap-2 animate-pulse"
-          >
-            <ShieldAlert className="w-4 h-4" /> EMERGENCY SOS
-          </button>
+          <HoldToTriggerButton
+            size="default"
+            label="HOLD FOR SOS"
+            sublabel="Press 1.5s"
+            onTrigger={() => setSosModalOpen(true)}
+          />
           <button
             onClick={handleCompleteTrip}
             className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5"

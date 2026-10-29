@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
 import { getSocket } from '../utils/socket';
 import SOSModal from './SOSModal';
+import HoldToTriggerButton from './HoldToTriggerButton';
+import { useShakeDetector } from '../hooks/useShakeDetector';
 
 export default function Navbar() {
   const { user, isAuthenticated, logout } = useAuth();
@@ -14,6 +16,11 @@ export default function Navbar() {
   const [sosModalOpen, setSosModalOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [activeTrip, setActiveTrip] = useState(null);
+
+  // VIGOROUS SHAKE DETECTION: Shake phone 3 times to trigger Silent SOS!
+  useShakeDetector(() => {
+    setSosModalOpen(true);
+  }, { enabled: isAuthenticated });
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -123,15 +130,12 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-3">
             {isAuthenticated ? (
               <>
-                {/* Global Emergency SOS Trigger */}
-                <button
-                  onClick={() => setSosModalOpen(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 hover:from-rose-500 hover:to-red-500 text-white font-black text-xs uppercase tracking-wider rounded-lg shadow-lg shadow-rose-600/30 border border-rose-400/50 animate-pulse transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                  title="Instant Emergency SOS"
-                >
-                  <AlertTriangle className="w-3.5 h-3.5 text-white animate-bounce" />
-                  <span>SOS</span>
-                </button>
+                {/* Global Emergency SOS Trigger (Hold 1.5s to prevent accidental clicks) */}
+                <HoldToTriggerButton
+                  size="compact"
+                  label="SOS (HOLD)"
+                  onTrigger={() => setSosModalOpen(true)}
+                />
 
                 {/* Notifications Bell */}
                 <Link
@@ -192,13 +196,11 @@ export default function Navbar() {
           <div className="flex md:hidden items-center gap-2">
             {isAuthenticated && (
               <>
-                <button
-                  onClick={() => setSosModalOpen(true)}
-                  className="flex items-center gap-1 px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-md shadow-md animate-pulse"
-                >
-                  <AlertTriangle className="w-3 h-3" />
-                  <span>SOS</span>
-                </button>
+                <HoldToTriggerButton
+                  size="compact"
+                  label="SOS"
+                  onTrigger={() => setSosModalOpen(true)}
+                />
                 <Link to="/notifications" className="relative p-2 text-slate-300">
                   <Bell className="w-5 h-5" />
                   {unreadCount > 0 && (
@@ -275,6 +277,19 @@ export default function Navbar() {
               </Link>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Floating Mobile SOS trigger for quick 1-thumb access */}
+      {isAuthenticated && (
+        <div className="md:hidden fixed bottom-5 right-5 z-40 animate-in fade-in slide-in-from-bottom-4">
+          <HoldToTriggerButton
+            size="default"
+            label="HOLD SOS"
+            sublabel="Or Shake Phone"
+            onTrigger={() => setSosModalOpen(true)}
+            className="shadow-2xl shadow-rose-950 border-2 border-rose-400"
+          />
         </div>
       )}
 
